@@ -1,0 +1,34 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio 14
+VisualStudioVersion = 14.0.25420.1
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ScoringCorpusEditor", "ScoringCorpusEditor\ScoringCorpusEditor.csproj", "{BC404870-6310-48A0-AB4C-F5B3094C2F47}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MergeTxt2Sql", "MergeTxt2Sql\MergeTxt2Sql.csproj", "{DE64EB33-94AA-430C-B66A-FC083E354E05}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SplitCorpus", "SplitCorpus\SplitCorpus.csproj", "{7F729565-6FA1-4F82-BD65-FCC7D16B0961}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{BC404870-6310-48A0-AB4C-F5B3094C2F47}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{BC404870-6310-48A0-AB4C-F5B3094C2F47}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{BC404870-6310-48A0-AB4C-F5B3094C2F47}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{BC404870-6310-48A0-AB4C-F5B3094C2F47}.Release|Any CPU.Build.0 = Release|Any CPU
+		{DE64EB33-94AA-430C-B66A-FC083E354E05}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{DE64EB33-94AA-430C-B66A-FC083E354E05}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{DE64EB33-94AA-430C-B66A-FC083E354E05}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{DE64EB33-94AA-430C-B66A-FC083E354E05}.Release|Any CPU.Build.0 = Release|Any CPU
+		{7F729565-6FA1-4F82-BD65-FCC7D16B0961}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{7F729565-6FA1-4F82-BD65-FCC7D16B0961}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{7F729565-6FA1-4F82-BD65-FCC7D16B0961}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{7F729565-6FA1-4F82-BD65-FCC7D16B0961}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+EndGlobal
