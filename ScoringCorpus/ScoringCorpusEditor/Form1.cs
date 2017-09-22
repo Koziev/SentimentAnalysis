@@ -17,6 +17,40 @@ namespace ScoringCorpusEditor
         public ScoringCorpusEditorMainForm()
         {
             InitializeComponent();
+
+            log4net.Config.XmlConfigurator.Configure();
+        }
+
+        /// <summary>
+        /// Показываем текст случившейся ошибки и позволяем работать дальше в расчете на то,
+        /// что пользователь устранит причину ошибки, например - даст разрешение на запись в
+        /// файл конфигурации и т.д.
+        /// </summary>
+        /// <param name="message">Текст сообщения об ошибке</param>
+        private static void ShowErrorAndContinue(string message)
+        {
+            System.Windows.Forms.MessageBox.Show(message, "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        }
+
+        /// <summary>
+        /// Показываем текст случившейся ошибки и прекращаем работу, так как дальше
+        /// может возкнуть опасность повреждения БД.
+        /// </summary>
+        /// <param name="message"></param>
+        private static void ShowErrorAndAbort(string message)
+        {
+            System.Windows.Forms.MessageBox.Show(message, "Фатальная ошибка", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            System.Windows.Forms.Application.Exit();
+        }
+
+        private static void ShowInfo(string message)
+        {
+            System.Windows.Forms.MessageBox.Show(message);
+        }
+
+        private static log4net.ILog GetLog()
+        {
+            return log4net.LogManager.GetLogger(typeof(ScoringCorpusEditorMainForm));
         }
 
 
@@ -39,13 +73,24 @@ namespace ScoringCorpusEditor
         private void LoadConfig()
         {
             string config_path = GetConfigFilePath();
+            var log = GetLog();
+            log.InfoFormat("Reading config from {0}", config_path);
 
             if (System.IO.File.Exists(config_path))
             {
-                using (System.IO.StreamReader rdr = new System.IO.StreamReader(config_path))
+                try
                 {
-                    corpus_path = rdr.ReadLine().Trim();
-                    current_line_index = rdr.ReadLine().Trim();
+                    using (System.IO.StreamReader rdr = new System.IO.StreamReader(config_path))
+                    {
+                        // TODO: переделать на JSON
+                        corpus_path = rdr.ReadLine().Trim();
+                        current_line_index = rdr.ReadLine().Trim();
+                    }
+                }
+                catch (Exception ex)
+                {
+                    log.ErrorFormat("Error when reading from config file {0}: {1}", config_path, ex.Message);
+                    ShowErrorAndContinue($"При чтении из файла конфигурации {config_path} возникла ошибка: {ex.Message}");
                 }
             }
 
@@ -55,11 +100,22 @@ namespace ScoringCorpusEditor
         private void StoreConfig()
         {
             string config_path = GetConfigFilePath();
+            var log = GetLog();
+            log.InfoFormat("Writing config to {0}", config_path);
 
-            using (System.IO.StreamWriter wrt = new System.IO.StreamWriter(config_path))
+            try
             {
-                wrt.WriteLine("{0}", corpus_path);
-                wrt.WriteLine("{0}", current_line_index);
+                using (System.IO.StreamWriter wrt = new System.IO.StreamWriter(config_path))
+                {
+                    // TODO: переделать на JSON
+                    wrt.WriteLine("{0}", corpus_path);
+                    wrt.WriteLine("{0}", current_line_index);
+                }
+            }
+            catch (Exception ex)
+            {
+                log.ErrorFormat("Error when writing to config file {0}: {1}", config_path, ex.Message);
+                ShowErrorAndContinue($"При записи в файл конфигурации {config_path} возникла ошибка: {ex.Message}");
             }
 
             return;
@@ -111,51 +167,78 @@ namespace ScoringCorpusEditor
             System.Data.SQLite.SQLiteConnectionStringBuilder cnx_build = new System.Data.SQLite.SQLiteConnectionStringBuilder();
             cnx_build.DataSource = corpus_path;
 
-            System.Data.SQLite.SQLiteConnection cnx = new System.Data.SQLite.SQLiteConnection(cnx_build.ConnectionString);
-            cnx.Open();
-            return cnx;
+            string connection_string = cnx_build.ConnectionString;
+
+            var log = GetLog();
+            log.InfoFormat("Opening connection {0}", connection_string);
+
+            try
+            {
+                System.Data.SQLite.SQLiteConnection cnx = new System.Data.SQLite.SQLiteConnection(connection_string);
+                cnx.Open();
+                return cnx;
+            }
+            catch (Exception ex)
+            {
+                log.ErrorFormat("Error occured when opening connection {0}: {1}", connection_string, ex.Message);
+                ShowErrorAndAbort($"При открытии соединения с БД {connection_string} возникла ошибка: {ex.Message}");
+                throw;
+            }
         }
 
         private void LoadCorpus()
         {
             if (!string.IsNullOrEmpty(corpus_path))
             {
+                var log = GetLog();
                 try
                 {
-                    System.Data.SQLite.SQLiteConnection cnx = GetConnection();
-                    System.Data.SQLite.SQLiteTransaction tx = cnx.BeginTransaction(IsolationLevel.ReadCommitted);
+                    log.InfoFormat("LoadCorpus corpus_path={0}", corpus_path);
+                    int nline = 0;
+                    using (System.Data.SQLite.SQLiteConnection cnx = GetConnection())
+                    {
+                        System.Data.SQLite.SQLiteTransaction tx = cnx.BeginTransaction(IsolationLevel.ReadCommitted);
 
-                    // подготовим экранный список.
+                        // подготовим экранный список.
 
-                    lv_lines.Items.Clear();
-                    file_pos_of_line.Clear();
-                    tb_curent.Text = "";
-                    System.Data.SQLite.SQLiteCommand cmd = new System.Data.SQLite.SQLiteCommand("SELECT COUNT(*) FROM Sent_DATASET", cnx);
-                    int nline = int.Parse(cmd.ExecuteScalar().ToString());
-
-                    cnx.Close();
+                        lv_lines.Items.Clear();
+                        file_pos_of_line.Clear();
+                        tb_curent.Text = "";
+                        System.Data.SQLite.SQLiteCommand cmd = new System.Data.SQLite.SQLiteCommand("SELECT COUNT(*) FROM Sent_DATASET", cnx);
+                        nline = int.Parse(cmd.ExecuteScalar().ToString());
+                        log.InfoFormat("nline={0}", nline);
+                    } // cnx.Close();
 
                     lv_lines.VirtualListSize = nline;
 
                     cb_save_corpus.Enabled = true;
 
-                    if (corpus_path.Contains("polarity"))
+                    // В зависимости от имени файла базы выбираем режим разметки и
+                    // включаем доступность визуальных элементов на форме.
+                    if (corpus_path.ContainsCI("polarity"))
                     {
+                        // Корпус с полярностью высказываний.
                         rb_polarity.Checked = true;
                     }
-                    else if (corpus_path.Contains("modifier"))
+                    else if (corpus_path.ContainsCI("modifier"))
                     {
+                        // Корпус с усиливающими/ослабляющими модификаторами
                         rb_modifier.Checked = true;
                     }
-                    else if (corpus_path.Contains("aspect"))
+                    else if (corpus_path.ContainsCI("aspect"))
                     {
+                        // Корпус с упоминанием аспектов
                         rb_aspect.Checked = true;
                     }
-
+                    else
+                    {
+                        throw new ApplicationException($"Не могу определить вид корпуса из имени файла {corpus_path}");
+                    }
                 }
                 catch (Exception ex)
                 {
-                    System.Windows.Forms.MessageBox.Show(ex.Message);
+                    log.Error("LoadCorpus error", ex);
+                    ShowErrorAndContinue(ex.Message);
                 }
             }
 
@@ -246,7 +329,9 @@ namespace ScoringCorpusEditor
             }
             catch (Exception ex)
             {
-                System.Windows.Forms.MessageBox.Show(ex.Message);
+                GetLog().ErrorFormat("Error in {0}: {1}", nameof(lv_lines_RetrieveVirtualItem), ex.Message);
+                ShowErrorAndContinue(ex.Message);
+                // !!! гасим исключение, пробуем работать дальше
             }
             finally
             {
@@ -260,33 +345,43 @@ namespace ScoringCorpusEditor
 
         private void lv_lines_SelectedIndexChanged(object sender, EventArgs e)
         {
-            if (lv_lines.SelectedIndices.Count == 1)
+            try
             {
-                current_line_index = lv_lines.SelectedIndices[0].ToString();
-
-                System.Data.SQLite.SQLiteConnection cnx = GetConnection();
-                System.Data.SQLite.SQLiteTransaction tx = cnx.BeginTransaction(IsolationLevel.ReadCommitted);
-
-                int cur_index = lv_lines.SelectedIndices[0];
-
-                System.Data.SQLite.SQLiteCommand cmd = new System.Data.SQLite.SQLiteCommand("SELECT str, labels FROM Sent_DATASET WHERE id=?", cnx, tx);
-                cmd.Parameters.AddWithValue("id", cur_index);
-
-                using (System.Data.SQLite.SQLiteDataReader rdr = cmd.ExecuteReader())
+                if (lv_lines.SelectedIndices.Count == 1)
                 {
-                    rdr.Read();
-                    string sent = rdr["str"].ToString();
-                    string labels = rdr["labels"].ToString();
-                    tb_curent.Text = sent;
-                    tb_labels.Text = labels;
-                }
+                    current_line_index = lv_lines.SelectedIndices[0].ToString();
 
-                tx.Commit();
-                cnx.Close();
+                    using (System.Data.SQLite.SQLiteConnection cnx = GetConnection())
+                    {
+                        System.Data.SQLite.SQLiteTransaction tx = cnx.BeginTransaction(IsolationLevel.ReadCommitted);
+
+                        int cur_index = lv_lines.SelectedIndices[0];
+
+                        System.Data.SQLite.SQLiteCommand cmd = new System.Data.SQLite.SQLiteCommand("SELECT str, labels FROM Sent_DATASET WHERE id=?", cnx, tx);
+                        cmd.Parameters.AddWithValue("id", cur_index);
+
+                        using (System.Data.SQLite.SQLiteDataReader rdr = cmd.ExecuteReader())
+                        {
+                            rdr.Read();
+                            string sent = rdr["str"].ToString();
+                            string labels = rdr["labels"].ToString();
+                            tb_curent.Text = sent;
+                            tb_labels.Text = labels;
+                        }
+
+                        tx.Commit();
+                    } //cnx.Close();
+                }
+                else
+                {
+                    current_line_index = "";
+                }
             }
-            else
+            catch (Exception ex)
             {
-                current_line_index = "";
+                GetLog().ErrorFormat("Error in {0}: {1}", nameof(lv_lines_SelectedIndexChanged), ex.Message);
+                ShowErrorAndContinue(ex.Message);
+                // !!! гасим исключение, пробуем работать дальше
             }
 
             StoreConfig();
@@ -298,51 +393,52 @@ namespace ScoringCorpusEditor
 
             try
             {
-                System.Data.SQLite.SQLiteConnection cnx = GetConnection();
-
-                int cur_index = lv_lines.SelectedIndices[0];
-
-                System.Data.SQLite.SQLiteCommand cmd = new System.Data.SQLite.SQLiteCommand("SELECT labels FROM Sent_DATASET WHERE id=?", cnx);
-                cmd.Parameters.AddWithValue("id", cur_index);
-                string old_labels = cmd.ExecuteScalar().ToString();
-
-                string[] lx = old_labels.Split(' ');
-
-                List<string> remove = new List<string>();
-
-                foreach (string l in labels)
+                using (System.Data.SQLite.SQLiteConnection cnx = GetConnection())
                 {
-                    string label_name = l.Split('=')[0];
-                    string label_value = l.Split('=')[1];
-                    if (label_name == "negat" || label_name == "posit" || label_name == "nosign")
+                    int cur_index = lv_lines.SelectedIndices[0];
+
+                    System.Data.SQLite.SQLiteCommand cmd = new System.Data.SQLite.SQLiteCommand("SELECT labels FROM Sent_DATASET WHERE id=?", cnx);
+                    cmd.Parameters.AddWithValue("id", cur_index);
+                    string old_labels = cmd.ExecuteScalar().ToString();
+
+                    string[] lx = old_labels.Split(' ');
+
+                    List<string> remove = new List<string>();
+
+                    foreach (string l in labels)
                     {
-                        remove.Add("negat");
-                        remove.Add("nosign");
-                        remove.Add("posit");
+                        string label_name = l.Split('=')[0];
+                        string label_value = l.Split('=')[1];
+                        if (label_name == "negat" || label_name == "posit" || label_name == "nosign")
+                        {
+                            remove.Add("negat");
+                            remove.Add("nosign");
+                            remove.Add("posit");
+                        }
+                        else
+                        {
+                            remove.Add(label_name);
+                        }
                     }
-                    else
-                    {
-                        remove.Add(label_name);
-                    }
-                }
 
 
-                string new_labels = string.Join(" ", lx.Where(z => !remove.Contains(z.Split('=')[0])).Concat(labels).ToArray());
-                new_labels = new_labels.Trim();
+                    string new_labels = string.Join(" ", lx.Where(z => !remove.Contains(z.Split('=')[0])).Concat(labels).ToArray());
+                    new_labels = new_labels.Trim();
 
-                cmd = new System.Data.SQLite.SQLiteCommand("UPDATE Sent_DATASET SET labels=? WHERE id=?", cnx);
-                cmd.Parameters.AddWithValue("labels", new_labels);
-                cmd.Parameters.AddWithValue("id", cur_index);
-                cmd.ExecuteNonQuery();
+                    cmd = new System.Data.SQLite.SQLiteCommand("UPDATE Sent_DATASET SET labels=? WHERE id=?", cnx);
+                    cmd.Parameters.AddWithValue("labels", new_labels);
+                    cmd.Parameters.AddWithValue("id", cur_index);
+                    cmd.ExecuteNonQuery();
 
-                cnx.Close();
-
+                } // cnx.Close();
 
                 lv_lines.Focus();
             }
             catch (Exception ex)
             {
-                System.Windows.Forms.MessageBox.Show(ex.Message);
+                GetLog().ErrorFormat("Error in {0}: {1}", nameof(StoreLabels), ex.Message);
+                ShowErrorAndAbort(ex.Message);
+                throw; // так как произошла ошибка при сохранении изменений в БД, то прекратим работу программы
             }
 
             Cursor.Current = Cursors.Default;
@@ -373,32 +469,48 @@ namespace ScoringCorpusEditor
             SaveCorpus();
         }
 
+        /// <summary>
+        /// Экспорт содержимого БД в CSV файл
+        /// </summary>
         private static void SaveCorpus()
         {
             Cursor.Current = Cursors.WaitCursor;
 
-            System.Data.SQLite.SQLiteConnection cnx = GetConnection();
-            System.Data.SQLite.SQLiteTransaction tx = cnx.BeginTransaction(IsolationLevel.ReadCommitted);
-
-            System.Data.SQLite.SQLiteCommand cmd = new System.Data.SQLite.SQLiteCommand("SELECT id, str, labels FROM Sent_DATASET ORDER BY id", cnx, tx);
-
-            string export_path = System.IO.Path.Combine(System.IO.Path.GetDirectoryName(corpus_path), System.IO.Path.GetFileNameWithoutExtension(corpus_path) + ".dat");
-
-            using (System.IO.StreamWriter wrt = new System.IO.StreamWriter(export_path))
+            try
             {
-                using (System.Data.SQLite.SQLiteDataReader rdr = cmd.ExecuteReader())
+                using (System.Data.SQLite.SQLiteConnection cnx = GetConnection())
                 {
-                    while (rdr.Read())
-                    {
-                        string sent = rdr["str"].ToString();
-                        string label = rdr["labels"].ToString();
+                    System.Data.SQLite.SQLiteTransaction tx = cnx.BeginTransaction(IsolationLevel.ReadCommitted);
 
-                        wrt.WriteLine("{0}\t{1}", sent, label);
+                    System.Data.SQLite.SQLiteCommand cmd = new System.Data.SQLite.SQLiteCommand("SELECT id, str, labels FROM Sent_DATASET ORDER BY id", cnx, tx);
+
+                    string export_path = System.IO.Path.Combine(System.IO.Path.GetDirectoryName(corpus_path), System.IO.Path.GetFileNameWithoutExtension(corpus_path) + ".dat");
+                    var log = GetLog();
+                    log.InfoFormat("SaveCorpus export_path={0}", export_path);
+                    using (System.IO.StreamWriter wrt = new System.IO.StreamWriter(export_path))
+                    {
+                        using (System.Data.SQLite.SQLiteDataReader rdr = cmd.ExecuteReader())
+                        {
+                            while (rdr.Read())
+                            {
+                                string sent = rdr["str"].ToString();
+                                string label = rdr["labels"].ToString();
+                                wrt.WriteLine("{0}\t{1}", sent, label);
+                            }
+                        }
                     }
-                }
+
+                    log.InfoFormat("Database exported to {0}", export_path);
+                    ShowInfo($"Данные сохранены в файл {export_path}");
+                } //cnx.Close();
+            }
+            catch( Exception ex)
+            {
+                GetLog().ErrorFormat("Error in {0}: {1}", nameof(SaveCorpus), ex.Message);
+                ShowErrorAndContinue(ex.Message);
+                // Попробуем дать возможность работать далее
             }
 
-            cnx.Close();
             Cursor.Current = Cursors.Default;
 
             return;

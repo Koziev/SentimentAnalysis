@@ -2,30 +2,44 @@
 using System.IO;
 using System.Text;
 using System.Collections.Generic;
+using System.Diagnostics.Contracts;
 
 // http://stackoverflow.com/questions/10189270/tracking-the-position-of-the-line-of-a-streamreader
 
 public class StreamLineReader : IDisposable
 {
+    private Stream _Base;
+    private int _Read = 0, _Index = 0;
+
     const int BufferLength = 1024;
+    private byte[] _Bff = new byte[BufferLength];
 
-    Stream _Base;
-    int _Read = 0, _Index = 0;
-    byte[] _Bff = new byte[BufferLength];
-
-    long _CurrentPosition = 0;
-    int _CurrentLine = 0;
+    private long _CurrentPosition = 0;
+    private int _CurrentLine = 0;
 
     /// <summary>
     /// CurrentLine number
     /// </summary>
     public long CurrentPosition
     {
-        get { return _CurrentPosition; }
+        get
+        {
+            Contract.Requires(_Base!=null);
+            Contract.Requires(_CurrentPosition >= 0);
+            return _CurrentPosition;
+        }
         set
         {
             if (_CurrentPosition != value)
             {
+                Contract.Requires(_Base != null);
+                Contract.Requires(_Base.CanSeek);
+                Contract.Ensures(_CurrentPosition>=0);
+                Contract.Ensures(_Read==0);
+                if(value<0)
+                {
+                    throw new ArgumentOutOfRangeException("CurrentPosition");
+                }
                 _CurrentPosition = value;
                 _Read = 0;
                 _Base.Position = _CurrentPosition;
@@ -34,27 +48,47 @@ public class StreamLineReader : IDisposable
             return;
         }
     }
+
     /// <summary>
     /// CurrentLine number
     /// </summary>
-    public int CurrentLine { get { return _CurrentLine; } }
+    public int CurrentLine
+    {
+        get
+        {
+            Contract.Requires(_Base!=null);
+            Contract.Requires(_CurrentLine>=0);
+            return _CurrentLine;
+        }
+    }
+
     /// <summary>
     /// Constructor
     /// </summary>
     /// <param name="stream">Stream</param>
-    public StreamLineReader(Stream stream) { _Base = stream; }
+    public StreamLineReader(Stream stream)
+    {
+        Contract.Requires(stream!=null);
+        Contract.Requires(stream.CanRead);
+        Contract.Requires(stream.CanSeek);
+        _Base = stream;
+    }
+
     /// <summary>
     /// Count lines and goto line number
     /// </summary>
     /// <param name="goToLine">Goto Line number</param>
     /// <returns>Return true if goTo sucessfully</returns>
     public bool GoToLine(int goToLine) { return IGetCount(goToLine, true) == goToLine; }
+
     /// <summary>
     /// Count lines and goto line number
     /// </summary>
     /// <param name="goToLine">Goto Line number</param>
     /// <returns>Return the Count of lines</returns>
+    /// 
     public int GetCount(int goToLine) { return IGetCount(goToLine, false); }
+
     /// <summary>
     /// Internal method for goto&Count
     /// </summary>
@@ -63,6 +97,10 @@ public class StreamLineReader : IDisposable
     /// <returns>Return the Count of lines</returns>
     int IGetCount(int goToLine, bool stopWhenLine)
     {
+        Contract.Requires(goToLine>=0);
+        Contract.Requires(_Base!=null);
+        Contract.Requires(_Base.CanSeek);
+
         _Base.Seek(0, SeekOrigin.Begin);
         _CurrentPosition = 0;
         _CurrentLine = 0;
@@ -101,6 +139,10 @@ public class StreamLineReader : IDisposable
     /// <returns></returns>
     public string ReadLine()
     {
+        Contract.Requires(_Base!=null);
+        Contract.Requires(_Base.CanRead);
+        Contract.Ensures(_CurrentLine>0);
+
         bool found = false;
 
         int nbytes = 0;
@@ -146,6 +188,7 @@ public class StreamLineReader : IDisposable
         _CurrentLine++;
         return System.Text.Encoding.UTF8.GetString(bytes, 0, nbytes);
     }
+
     /// <summary>
     /// Free resources
     /// </summary>
