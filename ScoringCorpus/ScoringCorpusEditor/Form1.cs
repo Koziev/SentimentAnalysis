@@ -82,9 +82,10 @@ namespace ScoringCorpusEditor
                 {
                     using (System.IO.StreamReader rdr = new System.IO.StreamReader(config_path))
                     {
-                        // TODO: переделать на JSON
-                        corpus_path = rdr.ReadLine().Trim();
-                        current_line_index = rdr.ReadLine().Trim();
+                        string cfg_json = rdr.ReadToEnd();
+                        EditorConfig cfg = Newtonsoft.Json.JsonConvert.DeserializeObject<EditorConfig>(cfg_json);
+                        corpus_path = cfg.corpus_path;
+                        current_line_index = cfg.current_line_index;
                     }
                 }
                 catch (Exception ex)
@@ -107,9 +108,9 @@ namespace ScoringCorpusEditor
             {
                 using (System.IO.StreamWriter wrt = new System.IO.StreamWriter(config_path))
                 {
-                    // TODO: переделать на JSON
-                    wrt.WriteLine("{0}", corpus_path);
-                    wrt.WriteLine("{0}", current_line_index);
+                    EditorConfig cfg = new EditorConfig { corpus_path = corpus_path, current_line_index = current_line_index };
+                    string cfg_json = Newtonsoft.Json.JsonConvert.SerializeObject(cfg);
+                    wrt.Write(cfg_json);
                 }
             }
             catch (Exception ex)
